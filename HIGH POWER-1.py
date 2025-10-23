@@ -13,6 +13,8 @@ import math
 from collections import defaultdict
 import re
 from collections import Counter
+import textwrap
+import math
 
 ################ Pop Up Window and Participant Information ############
 # Create a pop-up window for entering participant information
@@ -54,9 +56,9 @@ def increment_filename(base_filename):
         filename = f"{base_filename}_{file_count}.csv"
     return filename
 
-base_filename_tload = f"results_tload_participant_high_{participant_number}"
-base_filename_performance = f"performance_tload_participant_high_{participant_number}"
-base_filename_survey = f"survey_results_high_{participant_number}"
+base_filename_tload = f"results_tload_participant_high_{condition_choice}_{participant_number}"
+base_filename_performance = f"performance_tload_participant_high_{condition_choice}_{participant_number}"
+base_filename_survey = f"survey_results_high_{condition_choice}_{participant_number}"
 
 # --- Use the increment function to get final filenames ---
 csv_filename_tload = increment_filename(base_filename_tload)
@@ -80,7 +82,7 @@ with open(csv_filename_survey, 'a', newline='') as csvfile:
 
 
 ######################window creation####################
-win = visual.Window(size=[800,800], color='white', units='pix', fullscr=False)
+win = visual.Window(size=[800,800], color='white', units='pix', fullscr=True)
 # for later win = visual.Window(color='white', units='pix',fullscr=True)
 # Hide the mouse cursor
 win.mouseVisible = False
@@ -131,7 +133,7 @@ used_idxs = {
 }
 
 # CSV for TF items, include A/C in filename
-csv_filename_tf = f'tf_explanations_{condition_choice}.csv'
+csv_filename_tf = f'tf_explanations_{condition_choice}_highhigh_{participant_number}.csv'
 if not os.path.exists(csv_filename_tf):
     with open(csv_filename_tf, 'w', newline='') as f:
         w = csv.writer(f)
@@ -174,39 +176,43 @@ def sample_tf_pair(cond_label, used_idxs):
     return pair
 
 
-def run_true_false_trial(win, statement, ground_truth):
+from psychopy import visual, core, event
+import textwrap
+
+def run_true_false_trial(win, statement, ground_truth=None, min_chars=300, use_textbox2=False):
     """
-    Shows statement + '← False     → True'. Participant selects with arrows, ENTER to confirm.
-    Then keeps statement + chosen answer on screen and collects a brief typed explanation (≤ ~50 words).
+    Shows a statement + '← False     → True'. Participant selects with arrows, ENTER to confirm.
+    Then shows the statement and chosen answer, collects a typed explanation (min. `min_chars`).
     Returns (chosen_answer, choice_rt, confirm_rt, explanation_text).
     """
-    event.clearEvents()
 
-    # --- choice phase
+    # ---------- Choice phase ----------
     q = visual.TextStim(win, text=statement, color='black', height=28, wrapWidth=1100, pos=(0, 130))
     instr = visual.TextStim(win, text="False ←         → True\nPress ENTER to confirm",
                             color='black', height=22, pos=(0, 40))
     choice_hint = visual.TextStim(win, text="Current selection: (none)",
                                   color='black', height=24, pos=(0, 0))
 
-    selected = None  # "True" or "False"
-    t0 = core.getTime()
+    selected = None
     choice_rt = None
     confirm_rt = None
+    t0 = core.getTime()
 
     while True:
         choice_hint.text = f"Current selection: {selected if selected else '(none)'}"
         q.draw(); instr.draw(); choice_hint.draw()
         win.flip()
 
-        keys = event.getKeys(timeStamped=True)
-        for k, ts in keys:
-            if k in ['escape','q']: core.quit()
+        for k, ts in event.getKeys(timeStamped=True):
+            if k in ['escape', 'q']:
+                core.quit()
             if k == 'left':
-                if selected is None: choice_rt = ts - t0
+                if selected is None:
+                    choice_rt = ts - t0
                 selected = "False"
             elif k == 'right':
-                if selected is None: choice_rt = ts - t0
+                if selected is None:
+                    choice_rt = ts - t0
                 selected = "True"
             elif k == 'return' and selected is not None:
                 confirm_rt = ts - t0
@@ -215,52 +221,110 @@ def run_true_false_trial(win, statement, ground_truth):
             continue
         break
 
-    # --- explanation phase
-    # Keep question + chosen answer visible. Provide a simple text-entry box.
-    chosen_line = visual.TextStim(
-        win, text=f"Your answer: {selected} (ground truth: {ground_truth})",
-        color='black', height=22, pos=(0, 80)
+    # ---------- Explanation phase ----------
+    chosen_line = visual.TextStim(win, text=f"Your answer: {selected}",
+                                  color='black', height=22, pos=(0, 80))
+    prompt = visual.TextStim(win,
+        text=f"Briefly explain what the statement means (min. {min_chars} characters):\n"
+             "(Type; BACKSPACE to edit; ENTER to submit)",
+        color='black', height=20, wrapWidth=1100, pos=(0, 0)
     )
-    prompt = visual.TextStim(
-        win,
-        text="Briefly explain what the statement means (≤ 50 words):\n(Type; BACKSPACE to edit; ENTER to submit)",
-        color='black', height=20, wrapWidth=1100, pos=(0, -40)
+    warn = visual.TextStim(win,
+        text=f"(Please write at least {min_chars} characters before submitting.)",
+        color="black", height=20, pos=(0, -300)
     )
+
+    # ---- Text entry using manual renderer (robust across PsychoPy versions) ----
+    # Box geometry (change here to widen/narrow)
+    box_w, box_h = 1100, 200   # widened height a bit; tweak as you like
+    box_y = -140
+    padding = 12
+
+    box = visual.Rect(win, width=box_w, height=box_h, lineColor='black',
+                      pos=(0, box_y), fillColor='white')
+
+    # TextStim positioned to the **left edge** of the box with padding, so
+    # the visible text area matches the rectangle width.
+    letter_h = 19
+    txt = visual.TextStim(
+        win, text='', color='black', height=letter_h,
+        wrapWidth=None,  # we do our own wrapping
+        pos=(-(box_w/2 - padding), box_y),  # left edge inside the box
+        alignText='left', anchorHoriz='left', anchorVert='center'
+    )
+
+    # Wrapping/containment
+    char_w = letter_h * 0.6                         # approx average glyph width
+    visible_width = box_w - 2*padding
+    chars_per_line = max(10, int(visible_width / char_w))
+    line_pitch = letter_h * 1.2
+    max_lines = max(1, int((box_h - 2*padding) / line_pitch))
+
+    def last_lines(s: str) -> str:
+        wrapped = textwrap.wrap(s, width=chars_per_line, replace_whitespace=False, drop_whitespace=False)
+        return "\n".join(wrapped[-max_lines:]) if wrapped else ""
 
     typed = ""
-    while True:
-        # draw a simple "box"
-        box = visual.Rect(win, width=1100, height=120, lineColor='black', pos=(0, -140))
-        # content (soft cap)
-        display = typed[:800]
+    show_warn = False
 
+    while True:
+        # draw
         q.draw(); chosen_line.draw(); prompt.draw(); box.draw()
-        txt = visual.TextStim(win, text=display, color='black', height=19, wrapWidth=1040, pos=(0, -140))
+        txt.text = last_lines(typed)
         txt.draw()
+        if show_warn:
+            warn.draw()
         win.flip()
 
-        keys = event.waitKeys()
-        submit = False
-        for k in keys:
-            if k in ['escape','q']: core.quit()
+        # keys + modifiers (Shift) in a version-robust way
+        key_events = event.getKeys(modifiers=True)
+        submitted = False
+
+        for evt in key_events:
+            if isinstance(evt, tuple):
+                k, mods = evt
+            else:
+                k, mods = evt, {}
+
+            shift_down = bool(mods.get('shift') or mods.get('lshift') or mods.get('rshift'))
+
+            if k in ['escape']:
+                core.quit()
             elif k == 'return':
-                submit = True
+                if len(typed.strip()) >= min_chars:
+                    submitted = True
+                    show_warn = False
+                else:
+                    show_warn = True
             elif k == 'backspace':
-                typed = typed[:-1]
+                if typed:
+                    typed = typed[:-1]
             elif k == 'space':
                 typed += ' '
             elif len(k) == 1:
-                typed += k
-        if submit:
-            break
+                # letters/digits
+                typed += (k.upper() if shift_down and 'a' <= k <= 'z' else k)
+            else:
+                punct_map = {
+                    'period': '.', 'comma': ',', 'semicolon': ';', 'apostrophe': "'",
+                    'quote': '"', 'minus': '-', 'equal': '=', 'slash': '/', 'backslash': '\\',
+                    'lbracket': '[', 'rbracket': ']', 'grave': '`',
+                }
+                shift_pairs = {
+                    '1': '!', '2': '@', '3': '#', '4': '$', '5': '%', '6': '^', '7': '&', '8': '*',
+                    '9': '(', '0': ')', 'minus': '_', 'equal': '+', 'lbracket': '{', 'rbracket': '}',
+                    'backslash': '|', 'semicolon': ':', 'apostrophe': '"', 'comma': '<',
+                    'period': '>', 'slash': '?', 'grave': '~'
+                }
+                if k in punct_map:
+                    typed += shift_pairs.get(k, punct_map[k]) if shift_down else punct_map[k]
 
-    # trim to ~50 words
-    words = typed.split()
-    if len(words) > 50:
-        words = words[:50]
-    explanation_text = " ".join(words)
+        if submitted:
+            explanation_text = typed
+            # ✅ return BEFORE breaking out of the function
+            return selected, choice_rt, confirm_rt, explanation_text
 
-    return selected, choice_rt, confirm_rt, explanation_text
+
 
 
 ############################################################
@@ -333,22 +397,24 @@ REPONSE_ALL = REPONSE_SERIES1 + REPONSE_SERIES2 + REPONSE_SERIES3 + REPONSE_SERI
 
 
 #######################General Instructions#######################################
-instructions_gen = """
-General Instructions\n
-In this study, you will complete a roughly 45-minute-long series of tasks. \n
-You will complete a task called T-Task, about which we want to ask you some questions. \n
-You will be awarded Sona credits and money depending on your performance on the T-Task. \n\n
-You will now start a training segment. \n
-Press enter to continue"""
+instructions_gen = (
+    "General Instructions:\n\n"
+    "In this study, you will complete a series of tasks lasting approximately 45 minutes.\n\n"
+    "You will perform a task called the T-Task, about which we will later ask you several questions.\n\n"
+    "You will receive both SONA credits and a monetary reward depending on your performance on the T-Task.\n\n"
+    "You will now begin a short training segment to familiarize yourself with the procedure.\n\n"
+    "Press ENTER to continue."
+)
+
 
 # Create text stimulus
 instr_text = visual.TextStim(
     win,
     text=instructions_gen,
     color="black",
-    height=24,
+    height=30,
     wrapWidth=1000,
-    alignText="left"
+    alignText="center"
 )
 
 # Draw and wait for keypress
@@ -380,10 +446,6 @@ else:  # cond_label == "concrete"
         "Please read carefully until further instructions appear."
     )
 
-# Record the start time
-start_time = t
-min_display_time = 240  # 4 minutes (in seconds)
-
 # Show instructions
 instr_stim = visual.TextStim(
     win,
@@ -393,44 +455,84 @@ instr_stim = visual.TextStim(
     wrapWidth=1000
 )
 
+continue_text = visual.TextStim(
+    win=win,
+    text="You can now hit 'Return' to move on.",
+    color="black",
+    height=40,
+    wrapWidth=1000,
+    pos=(0, -400)
+)
+
 next_text = visual.TextStim(
     win=win,
-    text="You can now move on to the next task.",
+    text="You can now move on to the T-Task.",
     color="white",
     height=0.06,
     wrapWidth=1.2
 )
 
+# Show instructions and start timer
 instr_stim.draw()
 win.flip()
+start_time = core.getTime()  # <-- Start timing here
+min_display_time = 2  # 240 seconds is 4 minutes
 
-if t - start_time >= min_display_time:
-    next_text.setAutoDraw(True)
+# === Wait loop ===
+while True:
+    current_time = core.getTime()
+    elapsed = current_time - start_time
 
-# Allow key press to continue only after 4 minutes
-if t - start_time >= min_display_time and ('space' in keys or defaultKeyboard.getKeys(keyList=['space'])):
-    continueRoutine = False
+    # After the minimum time, show the continue message
+    if elapsed >= min_display_time:
+        instr_stim.draw()
+        continue_text.draw()
+        win.flip()
+        keys = event.getKeys(keyList=['return', 'escape'])
+        if 'return' in keys:
+            break
+        if 'escape' in keys:
+            core.quit()
+    else:
+        # Keep showing only the instructions until time is up
+        instr_stim.draw()
+        win.flip()
+        core.wait(0.1)  # small pause to reduce CPU load
 
-# Wait for Enter key to continue
+
+#Switchover Screen from instructions to tload calibration
+
+# Define the text to display
+info_text = (
+    "You will now move on to the next task.\n\n"
+    "Press 'Return' when you are ready to continue."
+)
+
+# Create the TextStim
+info_stim = visual.TextStim(
+    win=win,
+    text=info_text,
+    color='black',
+    height=40,
+    wrapWidth=1000
+)
+
+# Draw and show the screen
+info_stim.draw()
+win.flip()
+
+# Wait for 'return' (Enter) key
 event.waitKeys(keyList=['return'])
 
 
-
-
-
-
-
-#First NBACK task
-#############################################################################
-#                           number training                                 
-#############################################################################
-
-## add instruction 
+##################Tload Training###########################
 
 Instruction1_image = visual.ImageStim(win=win, image='inst_num.png',size=(900, 690)) #C:\Users\Gebruiker\Desktop\PsychopyStimuliSP2 current path
 Instruction1_image.draw() #size=(150, 150)
 win.flip()
 event.waitKeys(keyList=['space']) ### might wanna change this to any key
+
+
 STD = 1.4  # Replace with your desired duration
 for j in range(10): #change to 20 later
     keys = event.getKeys()
@@ -1025,19 +1127,7 @@ while performance >= 0.01:
             break
         
 
-# --- Continuation instructions after break ---
-continue_text = visual.TextStim(
-    win,
-    text="The break is over.\n\nPress SPACE to continue with the task.",
-    color='black',
-    height=32,
-    wrapWidth=900,
-    pos=(0, 0)
-)
 
-continue_text.draw()
-win.flip()
-event.waitKeys(keyList=['space'])
 
   
 
@@ -1094,7 +1184,7 @@ def show_likert_scale_confirm(win, question, options):
                 win,
                 text=f"({key})",
                 pos=(x, -140),  # keys below label
-                height=30,
+                height=40,
                 color=color
             )
 
@@ -1137,9 +1227,9 @@ def show_number_input_confirm(win, question, min_val=0, max_val=100, allow_decim
     )
     instructions_text = visual.TextStim(
         win,
-        text=f"Type a number between {min_val} and {max_val}. "
+        text=f"Type a number in Seconds. "
              "Use BACKSPACE to correct. Press ENTER to confirm.\n"
-             "Press 's' to skip this question.",
+             "60 Seconds = 1 Minute.",
         pos=(0, -250), height=20, color='gray', wrapWidth=900
     )
     input_display = visual.TextStim(
@@ -1233,8 +1323,8 @@ vasf_questions = [
 accu_questions = [
      #("PM1", "How much do you feel in charge right now?"), #after power
      # Fatigue VAS-F
-    ("ACC1", "What accuracy would you give yourself? (0-100, choose in steps of 10)"),
-    ("ACC2", "What accuracy level would you give the other person? (0-100, choose in steps of 10)"),
+    ("ACC1", "What accuracy would you give yourself? (10-90)"),
+    ("ACC2", "What accuracy level would you give the other person? (10-90)"),
 ]
 
 
@@ -1246,23 +1336,23 @@ emo_questions = [
     ("BOR3", "Did you lose awareness of yourself as separate from the activity?"),
     ("BOR4", "How much do you want to quit right now?"),
     ("BOR5", "How meaningful does the task feel to you?"),
-    
+ ]   
     # Effort
-    
+eff_questions = [    
     ("EFF1", "How effortful was the task for you?"),
-    ("EFF2", "How much effort did you put into the task?")
-    ("EFF3", "Please rate your mental effort required to complete this task.") #in tload loop
-    ("EFF4", "How did this effort feel?") #in tload loop
+    ("EFF2", "How much effort did you put into the task?"),
+    ("EFF3", "Please rate your mental effort required to complete this task."), #in tload loop
+    ("EFF4", "How did this effort feel?"), #in tload loop
 ]
 
 
 questions_open = [
-    ("TIME1", "How long do you think the T-Task Block lasted in Seconds? \n
+    ("TIME1", "How long do you think the T-Task Block lasted in Seconds? \n"
     "Please type below and confirm by pressing enter."), #in tload loop
 ]
 
 questions_open2 = [
-    ("TIME2", "Did you experience time passing differently?") #in tload loop
+    ("TIME2", "Did you experience time passing differently?"), #in tload loop
 ]
 
 power_question = [
@@ -1280,15 +1370,25 @@ power_question = [
 vasf_options = [f"{i} = Not at all" if i == 0 else f"{i} = Very much" if i == 9 else str(i) for i in range(10)]
 open2_options = [f"{i} = Slower" if i == 0 else f"{i} = Faster" if i == 9 else str(i) for i in range(10)]
 power_options = [f"{i} = Not at all" if i == 0 else f"{i} = Very much" if i == 9 else str(i) for i in range(10)]
-accu_options = [f"{i}% = Not at all accurate" if i == 0 else f"{i}% = Perfectly accurate" if i == 100 else f"{i}%"for i in range(0, 101, 5)]
+accu_options = [f"{i}% = Low accuracy" if i == 0 else f"{i}% = High accuracy" if i == 100 else f"{i}%"for i in range(10, 100, 10)]
+
 emo_options = [
-    "Strongly Disagree",
-    "Disagree",
-    "Somewhat Disagree",
+    "Not at all",
+    "Very little",
+    "A little",
     "Neutral",
-    "Somewhat Agree",
-    "Agree",
-    "Strongly Agree"
+    "Somewhat",
+    "Quite a bit",
+    "Very much"
+]
+eff_options = [
+    "Not at all Effortful",
+    "Not Effortful",
+    "Somewhat Effortful",
+    "Neutral",
+    "Somewhat Effortful",
+    "Effortful",
+    "Very Effortful"
 ]
 
 
@@ -1340,23 +1440,101 @@ instructions_text = visual.TextStim(
         "If you are Leader, you decide for yourself and for the other how accurate you and they "
         "will have to score on the T-task to double your reward. You can choose between 10% to 100%.\n\n"
         "If you are follower, you don’t decide. Your leader will have decided for you.\n\n"
-        "In the next screen, you will learn whether you were drawn to be leader or follower."
-    ),
+        "In the next screen, you will be paired with another participants. \n"
+        "Afterwards you will find out whether you were drawn to be leader or follower.\n"
+        "Please press enter to continue."
+    ), 
     pos=(0, 0),           # centered on screen
-    height=24,            # 24 pixels per line (adjust for readability)
+    height=30,            # 24 pixels per line (adjust for readability)
     wrapWidth=1000,       # line breaks at ~1000 pixels width
-    color='white',
+    color='black',
     alignText='center',   # center the text block
     units='pix'
 )
-
 
 instructions_text.draw()
 win.flip()
 event.waitKeys(keyList=['return'])  # wait for space to continue
 
+###Screen telling them that we are waiting for at least one other participant to finish
+waiting_text = visual.TextStim(
+    win=win,
+    text=(
+        "Please wait a moment...\n\n"
+        "We are waiting for at least one other participant to finish their task.\n\n"
+        "As soon as another participant is ready new instructions will appear on the screen.\n\n"
+        "This can take a few minutes, please be patient."
+    ),
+    color='black',
+    height=40,
+    wrapWidth=1000,
+    alignText='center',
+    pos=(0, 0)
+)
 
-for code, prompt in question_power:
+# Draw the waiting screen
+waiting_text.draw()
+win.flip()
+
+# --- 2. Wait random duration between 2 and 3 minutes ---
+wait_time = random.uniform(120, 180)  # seconds
+core.wait(wait_time)
+
+# --- 3. Update text after waiting ---
+finished_text = visual.TextStim(
+    win=win,
+    text=(
+        "Another participant has now finished.\n\n"
+        "You will now move on to your role assignment.\n\n"
+        "Press 'Return' when you are ready to continue."
+    ),
+    color='green',
+    height=40,
+    wrapWidth=1000,
+    alignText='center',
+    pos=(0, 0)
+)
+
+finished_text.draw()
+win.flip()
+
+# --- 4. Wait for Return key to proceed ---
+event.waitKeys(keyList=['return'])
+
+# Optional small pause before continuing
+core.wait(0.5)
+
+
+
+#informing them that they have been the leader
+
+leader_text = visual.TextStim(
+    win=win,
+    text=(
+        "You are the Leader.\n\n"
+        "This means you will determine the accuracy you and the other participant will have to score \n" 
+        "in order to receive double the reward.\n\n"
+        "If you fail to score above your chosen level, your reward will not be doubled."
+        "If the other participant scores below the level you have chosen for them, their reward will not be doubled.\n"
+        "If you have understood, please press 'Return' to move on."
+    ),
+    color='black',
+    height=40,         # text size in pixels
+    wrapWidth=1000,    # line width in pixels
+    alignText='center',
+    pos=(0, 0)
+)
+
+# Show the message
+leader_text.draw()
+win.flip()
+
+# Wait for the Return (Enter) key
+event.waitKeys(keyList=['return'])
+
+#Power check up questions
+
+for code, prompt in power_question:
         win.flip()  # blank screen
         core.wait(0.01)
         rating = show_likert_scale_confirm(
@@ -1365,9 +1543,14 @@ for code, prompt in question_power:
             options=power_options
         )
         questionnaire_results.append((code, rating)) 
-
-
-
+        
+        
+with open(csv_filename_survey, 'a', newline='') as questionnaire_file:
+    csv_writer = csv.writer(questionnaire_file)
+    for code, rating in questionnaire_results:
+        csv_writer.writerow([participant_number, sex, age, code, rating, block_q])
+        
+        
 for code, prompt in accu_questions:
         win.flip()  # blank screen
         core.wait(0.01)
@@ -1378,10 +1561,10 @@ for code, prompt in accu_questions:
         )
         questionnaire_results.append((code, rating)) 
 
-    with open(csv_filename_survey, 'a', newline='') as questionnaire_file:
-        csv_writer = csv.writer(questionnaire_file)
-        for code, rating in questionnaire_results:
-            csv_writer.writerow([participant_number, sex, age, code, rating, block_q])
+with open(csv_filename_survey, 'a', newline='') as questionnaire_file:
+    csv_writer = csv.writer(questionnaire_file)
+    for code, rating in questionnaire_results:
+        csv_writer.writerow([participant_number, sex, age, code, rating, block_q])
 
 ############################################################
 ############Loop repeating 5 min Tload + Questionnaires +SPD
@@ -1401,7 +1584,7 @@ for i in range (blocksmid):
     
     Tload_Start_text = visual.TextStim(
         win,
-        text="You will now continue to the Numbers and Letters task.\n\n"
+        text="You will now continue to the Numbers and Letters task where we will measure your accuracy.\n\n"
              "Press Space to start the task.",
         color='black',
         height=40,
@@ -1663,7 +1846,17 @@ for i in range (blocksmid):
         )
         questionnaire_results.append((code, rating))
         
-       for code, prompt in questions_open2:
+    for code, prompt in eff_questions:
+        win.flip()  # blank screen
+        core.wait(0.01)
+        rating = show_likert_scale_confirm(
+            win=win,
+            question=prompt,
+            options=eff_options
+        )
+        questionnaire_results.append((code, rating))
+        
+    for code, prompt in questions_open2:
         win.flip()  # blank screen
         core.wait(0.01)
         rating = show_likert_scale_confirm(
@@ -1673,7 +1866,7 @@ for i in range (blocksmid):
         )
         questionnaire_results.append((code, rating)) 
         
-        for code, prompt in question_power:
+    for code, prompt in power_question:
         win.flip()  # blank screen
         core.wait(0.01)
         rating = show_likert_scale_confirm(
@@ -1684,15 +1877,15 @@ for i in range (blocksmid):
         questionnaire_results.append((code, rating)) 
     
         
-        for code, prompt in questions_open:
-            win.flip(); core.wait(0.01)
-            val = show_number_input_confirm(
-                win=win,
-                question=prompt,
-                min_val=0,
-                max_val=100,
-                allow_decimal=True
-            )
+    for code, prompt in questions_open:
+        win.flip(); core.wait(0.01)
+        val = show_number_input_confirm(
+            win=win,
+            question=prompt,
+            min_val=0,
+            max_val=1000,
+            allow_decimal=True
+        )
         questionnaire_results.append((code, val))
 
         
@@ -1701,7 +1894,30 @@ for i in range (blocksmid):
         csv_writer = csv.writer(questionnaire_file)
         for code, rating in questionnaire_results:
             csv_writer.writerow([participant_number, sex, age, code, rating, block_q])
+    
+    
 
+
+    instructions_stat = visual.TextStim(
+        win,
+        text=(
+            "You will now be asked whether statements about the T-Task are true or false.\n\n"
+            "First, indicate whether you think the statement is TRUE or FALSE.\n"
+            "Then TYPE your explanation for your choice in the text field below.\n\n"
+            "Press ENTER to move to the first out of two statements."
+        ),
+        color="black",
+        height=26,          # adjust for readability
+        wrapWidth=1200,     # make text fit nicely in a centered block
+        pos=(0, 0),
+        alignText="left"
+    )
+
+    instructions_stat.draw()
+    win.flip()
+    event.waitKeys(keyList=['return', 'enter'])
+        
+    
     # === AFTER emo_questions loop, BEFORE writing questionnaire_results to your CSV ===
     pair = sample_tf_pair(cond_label, used_idxs)  # cond_label is "abstract" or "concrete" from the dialog
 
