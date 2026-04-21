@@ -57,9 +57,9 @@ def increment_filename(base_filename):
         filename = f"{base_filename}_{file_count}.csv"
     return filename
 
-base_filename_tload = f"results_tload_participant_high_{condition_choice}_{participant_number}"
-base_filename_performance = f"performance_tload_participant_high_{condition_choice}_{participant_number}"
-base_filename_survey = f"survey_results_high_{condition_choice}_{participant_number}"
+base_filename_tload = f"results_tload_participant_low_{condition_choice}_{participant_number}"
+base_filename_performance = f"performance_tload_participant_low_{condition_choice}_{participant_number}"
+base_filename_survey = f"survey_results_low_{condition_choice}_{participant_number}"
 
 # --- Use the increment function to get final filenames ---
 csv_filename_tload = increment_filename(base_filename_tload)
@@ -134,7 +134,7 @@ used_idxs = {
 }
 
 # CSV for TF items, include A/C in filename
-csv_filename_tf = f'tf_explanations_{condition_choice}_high_{participant_number}.csv'
+csv_filename_tf = f'tf_explanations_{condition_choice}_low_{participant_number}.csv'
 if not os.path.exists(csv_filename_tf):
     with open(csv_filename_tf, 'w', newline='') as f:
         w = csv.writer(f)
@@ -1467,8 +1467,31 @@ eff_options = [
 ]
 
 
+# First segment of questionnaires
+
+toquestcon = visual.TextStim(
+    win=win,
+    text=(
+        "You will now be asked a few questions.\n\n"
+        "Please select an answer by pressing a number,\n"
+        "and confirm your choice by pressing the SPACE key.\n\n"
+        "Press SPACE to continue."
+    ),
+    color='black',
+    height=40,
+    wrapWidth=1000,
+    pos=(0, 0)
+)
+
+toquestcon.draw()
+win.flip()
+event.clearEvents()
+event.waitKeys(keyList=['space'])
+
+questionnaire_results = []
+
 for code, prompt in vasf_questions:
-    win.flip()  # blank screen
+    win.flip()
     core.wait(0.01)
     rating = show_likert_scale_confirm(
         win=win,
@@ -1477,15 +1500,52 @@ for code, prompt in vasf_questions:
     )
     questionnaire_results.append((code, rating))
 
+for code, prompt in emo_questions:
+    win.flip()
+    core.wait(0.01)
+    rating = show_likert_scale_confirm(
+        win=win,
+        question=prompt,
+        options=emo_options
+    )
+    questionnaire_results.append((code, rating))
 
-  
+for code, prompt in eff_questions:
+    win.flip()
+    core.wait(0.01)
+    rating = show_likert_scale_confirm(
+        win=win,
+        question=prompt,
+        options=eff_options
+    )
+    questionnaire_results.append((code, rating))
 
-# ------------ SAVE RESULTS Questionnaires ------------- # I need to later make sure the questionnaires create new files each time or keep writing in one file
+for code, prompt in questions_open2:
+    win.flip()
+    core.wait(0.01)
+    rating = show_likert_scale_confirm(
+        win=win,
+        question=prompt,
+        options=open2_options
+    )
+    questionnaire_results.append((code, rating))
+
+for code, prompt in questions_open:
+    win.flip()
+    core.wait(0.01)
+    val = show_number_input_confirm(
+        win=win,
+        question=prompt,
+        min_val=0,
+        max_val=1000,
+        allow_decimal=True
+    )
+    questionnaire_results.append((code, val))
+
 with open(csv_filename_survey, 'a', newline='') as questionnaire_file:
     csv_writer = csv.writer(questionnaire_file)
     for code, rating in questionnaire_results:
-        csv_writer.writerow([participant_number, sex, age, code, rating, block_q])
-              
+        csv_writer.writerow([participant_number, sex, age, code, rating, block_q])        
 
 # End Screen
 end_questionnaire_text = visual.TextStim(
@@ -1550,12 +1610,13 @@ instructions_text = visual.TextStim(
     text=(
         "You will now get the chance to double your reward.\n\n"
         "This will work like this:\n"
-        "You will be paired with another participant. You will be leader or follower.\n\n"
-        "If you are Leader, you decide for yourself and for the other how accurate you and they "
+        "You will be paired with another participant. \n\n"
+        "You will be Leader or Follower.\n\n"
+        "If you are Leader, you decide for yourself and for the Follower how accurate you and they "
         "will have to score on the T-task to double your reward. You can choose between 10% to 100%.\n\n"
-        "If you are follower, you don’t decide. Your leader will have decided for you.\n\n"
+        "If you are Follower, you don’t decide. Your Leader will have decided for you.\n\n"
         "In the next screen, you will be paired with another participants. \n"
-        "Afterwards you will find out whether you were drawn to be leader or follower.\n"
+        "Afterwards you will find out whether you were drawn to be Leader or Follower.\n"
         "Please press enter to continue."
     ), 
     pos=(0, 0),           # centered on screen
@@ -1650,7 +1711,7 @@ event.waitKeys(keyList=['return'])
 wait_text = visual.TextStim(
     win=win,
     text=(
-        " The leader is currently choosing your accracy level.\n"
+        " The Leader is currently choosing your accuracy level.\n"
         "The screen will automatically continue once they have chosen."
     ),
     color='black',
@@ -1662,7 +1723,7 @@ wait_text = visual.TextStim(
 
 wait_text.draw()
 win.flip()
-core.wait(9)   # change duration if needed
+core.wait(25)   # change duration if needed
 
 
 # Screen 2: leader has chosen
@@ -1690,9 +1751,11 @@ event.waitKeys(keyList=['return', 'enter'])
 level_text = visual.TextStim(
     win=win,
     text=(
+        "The Leader has chosen: \n\n" 
+        "70% accuracy \n\n"
         "You have to score above 70% accuracy on the Number and Letter Task to double your reward.\n\n"
         "They have also chosen an accuracy level for themselves.\n\n"
-        "You will NOT be informed what they chose for themselves.\n\n"
+        "You will NOT be informed what level they chose for themselves.\n\n"
         "If you have understood, please press 'Enter'."
     ),
     color='black',
@@ -1774,8 +1837,8 @@ for i in range(blocksmid):
         text=(
             "You will now be asked a few questions.\n\n"
             "Please select an answer by pressing a number,\n"
-            "and confirm your choice by pressing the SPACE key.\n\n"
-            "Press SPACE to continue."
+            "and confirm your choice by pressing the Enter key.\n\n"
+            "Press Enter to continue."
         ),
         color='black',
         height=40,
@@ -1784,7 +1847,7 @@ for i in range(blocksmid):
     )
     toquestcon.draw()
     win.flip()
-    event.waitKeys(keyList=['space'])
+    event.waitKeys(keyList=['space','return'])
 
     questionnaire_results = []
 
@@ -1829,14 +1892,14 @@ for i in range(blocksmid):
         questionnaire_results.append((code, rating))
     
     for code, prompt in power_question:
-    win.flip()
-    core.wait(0.01)
-    rating = show_likert_scale_confirm(
-        win=win,
-        question=prompt,
-        options=power_options
-    )
-    questionnaire_results.append((code, rating))
+        win.flip()
+        core.wait(0.01)
+        rating = show_likert_scale_confirm(
+            win=win,
+            question=prompt,
+            options=power_options
+        )
+        questionnaire_results.append((code, rating))
     
     for code, prompt in questions_open:
         win.flip()
@@ -2144,7 +2207,7 @@ for i in range(blocksmid):
 # SAVE AS BLOCK 5
 ############################################################
 
-block_q = 5
+block_q = 6
 
 toquestcon = visual.TextStim(
     win,
