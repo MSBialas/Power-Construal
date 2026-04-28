@@ -23,7 +23,7 @@ dlg = gui.Dlg(title="Participant Information")
 dlg.addField("Participant Number:")
 dlg.addField("Sex:", choices=["Male", "Female", "Other"])
 dlg.addField("Age:")
-dlg.addField("Condition:", choices=["A ", "C "])  # <-- new dropdown
+dlg.addField("Condition:", choices=["A", "C"])  # <-- new dropdown
 
 
 
@@ -35,7 +35,7 @@ if dlg.OK:
     participant_number = participant_info["Participant Number:"]  # First field: Participant Number
     sex = participant_info["Sex:"]  # Second field: Sex
     age = participant_info["Age:"]  # Third field: Age
-    condition_choice = participant_info["Condition:"]
+    condition_choice = participant_info["Condition:"].strip()
     cond_label = "abstract" if condition_choice.upper() == "A" else "concrete"
     
     print("Participant Number:", participant_number)
@@ -178,8 +178,197 @@ def sample_tf_pair(cond_label, used_idxs):
 
 
 
-
 def run_true_false_trial(win, statement, ground_truth=None, min_chars=150, use_textbox2=False):
+    """
+    Shows a statement + '← False     → True'. Participant selects with arrows, ENTER to confirm.
+    Then shows the statement and chosen answer, collects a typed explanation (min. `min_chars`).
+    Returns (chosen_answer, choice_rt, confirm_rt, explanation_text).
+    """
+
+    # ---------- Choice phase ----------
+    q = visual.TextStim(win, text=statement, color='black', height=28,
+                        wrapWidth=1100, pos=(0, 130))
+    instr = visual.TextStim(win, text="False ←         → True\nPress ENTER to confirm",
+                            color='black', height=22, pos=(0, 40))
+    choice_hint = visual.TextStim(win, text="Current selection: (none)",
+                                  color='black', height=24, pos=(0, 0))
+
+    selected = None
+    choice_rt = None
+    confirm_rt = None
+    t0 = core.getTime()
+
+    while True:
+        choice_hint.text = f"Current selection: {selected if selected else '(none)'}"
+        q.draw()
+        instr.draw()
+        choice_hint.draw()
+        win.flip()
+
+        for k, ts in event.getKeys(timeStamped=True):
+            if k in ['escape', 'q']:
+                core.quit()
+            if k == 'left':
+                if selected is None:
+                    choice_rt = ts - t0
+                selected = "False"
+            elif k == 'right':
+                if selected is None:
+                    choice_rt = ts - t0
+                selected = "True"
+            elif k == 'return' and selected is not None:
+                confirm_rt = ts - t0
+                break
+        else:
+            continue
+        break
+
+    # ---------- Explanation phase ----------
+    chosen_line = visual.TextStim(win, text=f"Your answer: {selected}",
+                                  color='black', height=22, pos=(0, 80))
+
+    prompt = visual.TextStim(
+        win,
+        text=f"Briefly explain what the statement means (min. {min_chars} characters):\n"
+             "(Type; BACKSPACE to edit; ENTER to submit)",
+        color='black',
+        height=20,
+        wrapWidth=1100,
+        pos=(0, 0)
+    )
+
+    warn = visual.TextStim(
+        win,
+        text=f"(Please write at least {min_chars} characters before submitting.)",
+        color='black',
+        height=20,
+        pos=(0, -300)
+    )
+
+    # ---------- Text box ----------
+    box_w, box_h = 1100, 200
+    box_y = -140
+    padding = 6
+
+    box = visual.Rect(
+        win,
+        width=box_w,
+        height=box_h,
+        lineColor='black',
+        fillColor='white',
+        pos=(0, box_y)
+    )
+
+    letter_h = 19
+
+    txt = visual.TextStim(
+        win,
+        text='',
+        color='black',
+        height=letter_h,
+        wrapWidth=box_w - 2 * padding,   # uses almost the full width of the box
+        pos=(-box_w / 2 + padding, box_y + box_h / 2 - padding),
+        alignText='left',
+        anchorHoriz='left',
+        anchorVert='top'
+    )
+
+    typed = ""
+    show_warn = False
+
+    while True:
+        q.draw()
+        chosen_line.draw()
+        prompt.draw()
+        box.draw()
+
+        txt.text = typed
+        txt.draw()
+
+        if show_warn:
+            warn.draw()
+
+        win.flip()
+
+        key_events = event.getKeys(modifiers=True)
+        submitted = False
+
+        for evt in key_events:
+            if isinstance(evt, tuple):
+                k, mods = evt
+            else:
+                k, mods = evt, {}
+
+            shift_down = bool(
+                mods.get('shift') or mods.get('lshift') or mods.get('rshift')
+            )
+
+            if k == 'escape':
+                core.quit()
+
+            elif k == 'return':
+                if len(typed.strip()) >= min_chars:
+                    submitted = True
+                    show_warn = False
+                else:
+                    show_warn = True
+
+            elif k == 'backspace':
+                if typed:
+                    typed = typed[:-1]
+
+            elif k == 'space':
+                typed += ' '
+
+            elif len(k) == 1:
+                typed += k.upper() if shift_down and 'a' <= k <= 'z' else k
+
+            else:
+                punct_map = {
+                    'period': '.',
+                    'comma': ',',
+                    'semicolon': ';',
+                    'apostrophe': "'",
+                    'quote': '"',
+                    'minus': '-',
+                    'equal': '=',
+                    'slash': '/',
+                    'backslash': '\\',
+                    'lbracket': '[',
+                    'rbracket': ']',
+                    'grave': '`',
+                }
+
+                shift_pairs = {
+                    '1': '!',
+                    '2': '@',
+                    '3': '#',
+                    '4': '$',
+                    '5': '%',
+                    '6': '^',
+                    '7': '&',
+                    '8': '*',
+                    '9': '(',
+                    '0': ')',
+                    'minus': '_',
+                    'equal': '+',
+                    'lbracket': '{',
+                    'rbracket': '}',
+                    'backslash': '|',
+                    'semicolon': ':',
+                    'apostrophe': '"',
+                    'comma': '<',
+                    'period': '>',
+                    'slash': '?',
+                    'grave': '~'
+                }
+
+                if k in punct_map:
+                    typed += shift_pairs.get(k, punct_map[k]) if shift_down else punct_map[k]
+
+        if submitted:
+            explanation_text = typed
+            return selected, choice_rt, confirm_rt, explanation_text
     """
     Shows a statement + '← False     → True'. Participant selects with arrows, ENTER to confirm.
     Then shows the statement and chosen answer, collects a typed explanation (min. `min_chars`).
@@ -970,7 +1159,7 @@ keys = 'a' #####this is to change the s that might have been previously pressed 
 
 skipped = False
 
-while performance >= 0.01:
+while performance >= 0.85:
     block_tload = 'Inidivdualization'
         
     computer_time_series = core.getTime() ##to be copy pasted
@@ -1779,7 +1968,7 @@ event.waitKeys(keyList=['return', 'enter'])
 # written to one separate file
 # ============================================================
 
-csv_filename_accupower = f"{participant_number}_accuracy_power_low.csv"
+csv_filename_accupower = f"{participant_number}_accuracy_power_{condition_choice}_low.csv"
 
 accupower_results = []
 

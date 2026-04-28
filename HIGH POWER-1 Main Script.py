@@ -23,7 +23,7 @@ dlg = gui.Dlg(title="Participant Information")
 dlg.addField("Participant Number:")
 dlg.addField("Sex:", choices=["Male", "Female", "Other"])
 dlg.addField("Age:")
-dlg.addField("Condition:", choices=["A ", "C "])  # <-- new dropdown
+dlg.addField("Condition:", choices=["A", "C"])  # <-- new dropdown
 
 
 
@@ -35,7 +35,7 @@ if dlg.OK:
     participant_number = participant_info["Participant Number:"]  # First field: Participant Number
     sex = participant_info["Sex:"]  # Second field: Sex
     age = participant_info["Age:"]  # Third field: Age
-    condition_choice = participant_info["Condition:"]
+    condition_choice = participant_info["Condition:"].strip()
     cond_label = "abstract" if condition_choice.upper() == "A" else "concrete"
     
     print("Participant Number:", participant_number)
@@ -187,7 +187,8 @@ def run_true_false_trial(win, statement, ground_truth=None, min_chars=150, use_t
     """
 
     # ---------- Choice phase ----------
-    q = visual.TextStim(win, text=statement, color='black', height=28, wrapWidth=1100, pos=(0, 130))
+    q = visual.TextStim(win, text=statement, color='black', height=28,
+                        wrapWidth=1100, pos=(0, 130))
     instr = visual.TextStim(win, text="False ←         → True\nPress ENTER to confirm",
                             color='black', height=22, pos=(0, 40))
     choice_hint = visual.TextStim(win, text="Current selection: (none)",
@@ -200,7 +201,9 @@ def run_true_false_trial(win, statement, ground_truth=None, min_chars=150, use_t
 
     while True:
         choice_hint.text = f"Current selection: {selected if selected else '(none)'}"
-        q.draw(); instr.draw(); choice_hint.draw()
+        q.draw()
+        instr.draw()
+        choice_hint.draw()
         win.flip()
 
         for k, ts in event.getKeys(timeStamped=True):
@@ -224,95 +227,52 @@ def run_true_false_trial(win, statement, ground_truth=None, min_chars=150, use_t
     # ---------- Explanation phase ----------
     chosen_line = visual.TextStim(win, text=f"Your answer: {selected}",
                                   color='black', height=22, pos=(0, 80))
+
     prompt = visual.TextStim(
         win,
         text=f"Briefly explain what the statement means (min. {min_chars} characters):\n"
              "(Type; BACKSPACE to edit; ENTER to submit)",
-        color='black', height=20, wrapWidth=1100, pos=(0, 0)
+        color='black',
+        height=20,
+        wrapWidth=1100,
+        pos=(0, 0)
     )
+
     warn = visual.TextStim(
         win,
         text=f"(Please write at least {min_chars} characters before submitting.)",
-        color="black", height=20, pos=(0, -300)
+        color='black',
+        height=20,
+        pos=(0, -300)
     )
 
     # ---------- Text box ----------
     box_w, box_h = 1100, 200
     box_y = -140
-    padding = 6   # smaller padding so text gets closer to the edges
+    padding = 6
 
     box = visual.Rect(
-        win, width=box_w, height=box_h,
-        lineColor='black', fillColor='white',
+        win,
+        width=box_w,
+        height=box_h,
+        lineColor='black',
+        fillColor='white',
         pos=(0, box_y)
     )
 
     letter_h = 19
+
     txt = visual.TextStim(
         win,
         text='',
         color='black',
         height=letter_h,
-        wrapWidth=None,   # we do our own wrapping
-        pos=(-(box_w/2 - padding), box_y),
+        wrapWidth=box_w - 2 * padding,   # uses almost the full width of the box
+        pos=(-box_w / 2 + padding, box_y + box_h / 2 - padding),
         alignText='left',
         anchorHoriz='left',
-        anchorVert='center'
+        anchorVert='top'
     )
-
-    visible_width = box_w - 2 * padding
-    line_pitch = letter_h * 1.2
-    max_lines = max(1, int((box_h - 2 * padding) / line_pitch))
-
-    # ---------- Pixel-based wrapping ----------
-    def wrap_by_pixel_width(s, textstim, max_width):
-        if not s:
-            return []
-
-        paragraphs = s.split('\n')
-        all_lines = []
-
-        for para in paragraphs:
-            if para == "":
-                all_lines.append("")
-                continue
-
-            words = para.split(' ')
-            current = ""
-
-            for word in words:
-                candidate = word if current == "" else current + " " + word
-                textstim.text = candidate
-
-                # boundingBox[0] = rendered width in pixels
-                if textstim.boundingBox[0] <= max_width:
-                    current = candidate
-                else:
-                    if current:
-                        all_lines.append(current)
-                        current = word
-                    else:
-                        # fallback for a single overlong "word"
-                        temp = ""
-                        for ch in word:
-                            cand2 = temp + ch
-                            textstim.text = cand2
-                            if textstim.boundingBox[0] <= max_width:
-                                temp = cand2
-                            else:
-                                if temp:
-                                    all_lines.append(temp)
-                                temp = ch
-                        current = temp
-
-            if current:
-                all_lines.append(current)
-
-        return all_lines
-
-    def last_lines(s: str) -> str:
-        wrapped = wrap_by_pixel_width(s, txt, visible_width)
-        return "\n".join(wrapped[-max_lines:]) if wrapped else ""
 
     typed = ""
     show_warn = False
@@ -323,7 +283,7 @@ def run_true_false_trial(win, statement, ground_truth=None, min_chars=150, use_t
         prompt.draw()
         box.draw()
 
-        txt.text = last_lines(typed)
+        txt.text = typed
         txt.draw()
 
         if show_warn:
@@ -340,42 +300,76 @@ def run_true_false_trial(win, statement, ground_truth=None, min_chars=150, use_t
             else:
                 k, mods = evt, {}
 
-            shift_down = bool(mods.get('shift') or mods.get('lshift') or mods.get('rshift'))
+            shift_down = bool(
+                mods.get('shift') or mods.get('lshift') or mods.get('rshift')
+            )
 
-            if k in ['escape']:
+            if k == 'escape':
                 core.quit()
+
             elif k == 'return':
                 if len(typed.strip()) >= min_chars:
                     submitted = True
                     show_warn = False
                 else:
                     show_warn = True
+
             elif k == 'backspace':
                 if typed:
                     typed = typed[:-1]
+
             elif k == 'space':
                 typed += ' '
+
             elif len(k) == 1:
-                typed += (k.upper() if shift_down and 'a' <= k <= 'z' else k)
+                typed += k.upper() if shift_down and 'a' <= k <= 'z' else k
+
             else:
                 punct_map = {
-                    'period': '.', 'comma': ',', 'semicolon': ';', 'apostrophe': "'",
-                    'quote': '"', 'minus': '-', 'equal': '=', 'slash': '/', 'backslash': '\\',
-                    'lbracket': '[', 'rbracket': ']', 'grave': '`',
+                    'period': '.',
+                    'comma': ',',
+                    'semicolon': ';',
+                    'apostrophe': "'",
+                    'quote': '"',
+                    'minus': '-',
+                    'equal': '=',
+                    'slash': '/',
+                    'backslash': '\\',
+                    'lbracket': '[',
+                    'rbracket': ']',
+                    'grave': '`',
                 }
+
                 shift_pairs = {
-                    '1': '!', '2': '@', '3': '#', '4': '$', '5': '%', '6': '^', '7': '&', '8': '*',
-                    '9': '(', '0': ')', 'minus': '_', 'equal': '+', 'lbracket': '{', 'rbracket': '}',
-                    'backslash': '|', 'semicolon': ':', 'apostrophe': '"', 'comma': '<',
-                    'period': '>', 'slash': '?', 'grave': '~'
+                    '1': '!',
+                    '2': '@',
+                    '3': '#',
+                    '4': '$',
+                    '5': '%',
+                    '6': '^',
+                    '7': '&',
+                    '8': '*',
+                    '9': '(',
+                    '0': ')',
+                    'minus': '_',
+                    'equal': '+',
+                    'lbracket': '{',
+                    'rbracket': '}',
+                    'backslash': '|',
+                    'semicolon': ':',
+                    'apostrophe': '"',
+                    'comma': '<',
+                    'period': '>',
+                    'slash': '?',
+                    'grave': '~'
                 }
+
                 if k in punct_map:
                     typed += shift_pairs.get(k, punct_map[k]) if shift_down else punct_map[k]
 
         if submitted:
             explanation_text = typed
             return selected, choice_rt, confirm_rt, explanation_text
-
 ############################################################
 # Initialize variables##########################################################
 #For Tload Dback Task
@@ -970,7 +964,7 @@ keys = 'a' #####this is to change the s that might have been previously pressed 
 
 skipped = False
 
-while performance >= 0.01:
+while performance >= 0.85:
     block_tload = 'Inidivdualization'
         
     computer_time_series = core.getTime() ##to be copy pasted
@@ -1717,7 +1711,7 @@ event.waitKeys(keyList=['return'])
 # written to one separate file
 # ============================================================
 
-csv_filename_accupower = f"{participant_number}_accuracy_power_high.csv"
+csv_filename_accupower = f"{participant_number}_accuracy_power_{condition_choice}_high.csv"
 
 accupower_results = []
 
